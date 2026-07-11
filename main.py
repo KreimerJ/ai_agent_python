@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import sys
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -26,30 +27,43 @@ def main():
         },
     ]
 
-    response = client.chat.completions.create(
-        model="openrouter/free",
-        messages=messages,
-        temperature=0,
-        tools=available_functions,
-    )
+    broke_before_finishing_loop: bool = False
 
-    check_usage_response_none(response.usage)
+    for _ in range(20):
+        response = client.chat.completions.create(
+            model="openrouter/free",
+            messages=messages,
+            temperature=0,
+            tools=available_functions,
+        )
 
-    prompt_token_usage = response.usage.prompt_tokens
-    reponse_token_usage = response.usage.completion_tokens
-    message = response.choices[0].message
-    tool_call_info = message.tool_calls
-    if tool_call_info:
-        for tool_call in tool_call_info:
-            result_message = call_function(tool_call, args.verbose)
-            if result_message["content"] == "":
-                raise ValueError(f"Function {tool_call.function.name} returned None")
+        check_usage_response_none(response.usage)
 
-            if args.verbose:
-                print(f"-> {result_message['content']}")
+        prompt_token_usage = response.usage.prompt_tokens
+        reponse_token_usage = response.usage.completion_tokens
+        message = response.choices[0].message
+        tool_call_info = message.tool_calls
+        messages.append(message)
 
-    else:
-        output(message.content, prompt_token_usage, reponse_token_usage, args)
+        if tool_call_info:
+            for tool_call in tool_call_info:
+                result_message = call_function(tool_call, args.verbose)
+                if result_message["content"] == "":
+                    raise ValueError(
+                        f"Function {tool_call.function.name} returned None"
+                    )
+
+                if args.verbose:
+                    print(f"-> {result_message['content']}")
+                messages.append(result_message)
+
+        else:
+            output(message.content, prompt_token_usage, reponse_token_usage, args)
+            broke_before_finishing_loop = True
+            break
+
+    if not broke_before_finishing_loop:
+        print(sys.exit(1))
 
 
 def ai_args_parser():
